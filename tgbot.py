@@ -1,116 +1,110 @@
-import re
+# Удаление v.0.1 — Telegram-бот для пересылки сообщений, очистки от личных данных, добавления хэштегов и нумерации объектов.
+
+import logging
 import os
-import asyncio
+import re
+import ssl  # <--- важно для aiogram/ssl соединения
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InputMediaPhoto, InputMediaVideo
-from aiogram.utils import executor
+from aiogram.enums import ContentType
+from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram import Router
+from aiogram.types import Message
+from aiogram.utils.markdown import hbold
+from contextlib import suppress
 
-API_TOKEN = '7947507030:AAEDGga_FOGjiumUvYSq-iDy1UUACUHYOj4'
-CHANNEL_ID = '@pravdainedvijimost'
-CONTACT_INFO = 'по всем вопросам:\n+998 93 801 32 04 Олег\n@pravdainedvijimost\n@et_olv'
+import sys
+import platform
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
-media_groups = {}
+# Проверка наличия ssl-модуля
+if not hasattr(ssl, 'SSLContext'):
+    raise RuntimeError("Отсутствует модуль ssl. Убедитесь, что ваша среда поддерживает OpenSSL.")
 
-COUNTER_FILE = 'counter.txt'
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
 
-# Чтение счётчика из файла
-def load_counter():
-    if os.path.exists(COUNTER_FILE):
-        with open(COUNTER_FILE, 'r') as f:
-            return int(f.read())
-    return 1
+# Токен и ID канала
+BOT_TOKEN = "7947507030:AAEDGga_FOGjiumUvYSq-iDy1UUACUHYOj4"
+CHANNEL_ID = "@pravdainedvijimost"
 
-# Сохранение счётчика в файл
-def save_counter(counter):
-    with open(COUNTER_FILE, 'w') as f:
-        f.write(str(counter))
+# Путь к файлу счётчика объектов
+COUNTER_FILE = "object_counter.txt"
 
-post_counter = load_counter()
+# Чтение и обновление счётчика объектов
+def read_counter():
+    if not os.path.exists(COUNTER_FILE):
+        return 1
+    with open(COUNTER_FILE, "r") as f:
+        return int(f.read().strip() or 1)
 
-# Очистка текста от лишнего
-def clean_text(text: str, number: int) -> str:
-    if not text:
-        text = ''
+def write_counter(value):
+    with open(COUNTER_FILE, "w") as f:
+        f.write(str(value))
 
-    lines = text.strip().split('\n')
-    cleaned_lines = []
+# Очистка текста от персональных данных и форматирование
+PHONE_REGEX = r"\+?\d[\d\s\-()]{7,}\d"
+TG_USERNAME_REGEX = r"@\w+"
+URL_REGEX = r"https?://\S+"
+HASHTAG_REGEX = r"#[\wа-яА-ЯёЁ0-9]+"
 
-    for line in lines:
-        if re.search(r'\+?\d[\d\s\-\(\)]{7,}\d', line):  # Телефон
-            continue
-        if re.search(r'@\w{4,}', line):  # Юзернеймы
-            continue
-        if re.search(r'https?://t\.me/\S+', line):  # Ссылки
-            continue
-        line = re.sub(r'#\S+', '', line)  # Удаление хештегов (#4к и т.п.)
-        line = re.sub(r'\s+', ' ', line).strip()  # Сжатие пробелов
-        cleaned_lines.append(line if line else '')
+def clean_text(text):
+    text = re.sub(PHONE_REGEX, "", text)
+    text = re.sub(TG_USERNAME_REGEX, "", text)
+    text = re.sub(URL_REGEX, "", text)
+    text = re.sub(HASHTAG_REGEX, "", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    text = text.strip()
+    return text
 
-    # Удаление лишних подряд идущих пустых строк
-    final_lines = []
-    last_empty = False
-    for line in cleaned_lines:
-        if line == '':
-            if not last_empty:
-                final_lines.append('')
-                last_empty = True
+# Создание бота и диспетчера
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+dp = Dispatcher(storage=MemoryStorage())
+router = Router()
+dp.include_router(router)
+
+@router.message()
+async def handle_message(message: types.Message):
+    object_number = read_counter()
+    header = f"#Объект {object_number}"
+    footer = "\n\n<b>Связаться с нами:</b>\nОлег\n+998 90 123 45 67\n@pravdainedvijimost"
+
+    text = clean_text(message.text or message.caption or "")
+    content = f"{header}\n{text}{footer}"
+
+    # Отправка в канал
+    try:
+        if message.photo:
+            await bot.send_photo(CHANNEL_ID, photo=message.photo[-1].file_id, caption=content)
+        elif message.video:
+            await bot.send_video(CHANNEL_ID, video=message.video.file_id, caption=content)
+        elif message.text:
+            await bot.send_message(CHANNEL_ID, content)
         else:
-            final_lines.append(line)
-            last_empty = False
+            await bot.send_message(CHANNEL_ID, f"{header}\n<Unsupported content>{footer}")
 
-    final_lines.insert(0, f'#Объект {number}')
-    final_lines.append('')
-    final_lines.append(CONTACT_INFO)
+        write_counter(object_number + 1)
+    except Exception as e:
+        logging.error(f"Ошибка при отправке: {e}")
 
-    return '\n'.join(final_lines)
+# Основной запуск
+if __name__ == "__main__":
+    import asyncio
 
-@dp.message_handler(content_types=types.ContentType.ANY)
-async def handle_media(message: types.Message):
-    global post_counter
+    async def main():
+        try:
+            await dp.start_polling(bot)
+        except Exception as e:
+            logging.error(f"Ошибка при запуске бота: {e}")
 
-    if message.media_group_id:
-        media_group = media_groups.setdefault(message.media_group_id, [])
-        media_group.append(message)
-        await asyncio.sleep(1.5)
+    # Обход ошибки asyncio.run() в средах с активным event loop
+    if sys.platform == "win32" and platform.python_version().startswith("3.8"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-        if media_groups.get(message.media_group_id):
-            group = media_groups.pop(message.media_group_id)
-            media = []
-
-            for i, msg in enumerate(group):
-                caption = clean_text(msg.caption, post_counter) if i == 0 else None
-                if msg.photo:
-                    media.append(InputMediaPhoto(media=msg.photo[-1].file_id, caption=caption))
-                elif msg.video:
-                    media.append(InputMediaVideo(media=msg.video.file_id, caption=caption))
-
-            await bot.send_media_group(chat_id=CHANNEL_ID, media=media)
-            await message.answer(f"Подборка #{post_counter} отправлена в канал.")
-            post_counter += 1
-            save_counter(post_counter)
-
-    elif message.photo:
-        caption = clean_text(message.caption, post_counter)
-        await bot.send_photo(chat_id=CHANNEL_ID, photo=message.photo[-1].file_id, caption=caption)
-        await message.answer(f"Фото #{post_counter} отправлено в канал.")
-        post_counter += 1
-        save_counter(post_counter)
-
-    elif message.video:
-        caption = clean_text(message.caption, post_counter)
-        await bot.send_video(chat_id=CHANNEL_ID, video=message.video.file_id, caption=caption)
-        await message.answer(f"Видео #{post_counter} отправлено в канал.")
-        post_counter += 1
-        save_counter(post_counter)
-
-    elif message.text:
-        text = clean_text(message.text, post_counter)
-        await bot.send_message(chat_id=CHANNEL_ID, text=text)
-        await message.answer(f"Текст #{post_counter} отправлен в канал.")
-        post_counter += 1
-        save_counter(post_counter)
-
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "asyncio.run() cannot be called from a running event loop" in str(e):
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(main())
+        else:
+            raise
