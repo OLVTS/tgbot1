@@ -3,18 +3,19 @@
 import logging
 import os
 import re
-import ssl  # <--- важно для aiogram/ssl соединения
+import ssl
+import asyncio
+import sys
+import platform
+from collections import defaultdict
+from contextlib import suppress
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ContentType
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram import Router
-from aiogram.types import Message
+from aiogram.types import Message, InputMediaPhoto, InputMediaVideo
 from aiogram.utils.markdown import hbold
-from contextlib import suppress
-
-import sys
-import platform
 
 # Проверка наличия ssl-модуля
 if not hasattr(ssl, 'SSLContext'):
@@ -30,7 +31,6 @@ CHANNEL_ID = "@pravdainedvijimost"
 # Путь к файлу счётчика объектов
 COUNTER_FILE = "object_counter.txt"
 
-# Чтение и обновление счётчика объектов
 def read_counter():
     if not os.path.exists(COUNTER_FILE):
         return 1
@@ -41,7 +41,7 @@ def write_counter(value):
     with open(COUNTER_FILE, "w") as f:
         f.write(str(value))
 
-# Очистка текста от персональных данных и форматирование
+# Регулярки для очистки
 PHONE_REGEX = r"\+?\d[\d\s\-()]{7,}\d"
 TG_USERNAME_REGEX = r"@\w+"
 URL_REGEX = r"https?://\S+"
@@ -53,8 +53,7 @@ def clean_text(text):
     text = re.sub(URL_REGEX, "", text)
     text = re.sub(HASHTAG_REGEX, "", text)
     text = re.sub(r"\n{2,}", "\n", text)
-    text = text.strip()
-    return text
+    return text.strip()
 
 # Создание бота и диспетчера
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -62,41 +61,62 @@ dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 dp.include_router(router)
 
+# Временное хранилище медиа-групп
+media_groups = defaultdict(list)
+
 @router.message()
 async def handle_message(message: types.Message):
     object_number = read_counter()
     header = f"#Объект {object_number}"
     footer = "\n\n<b>Связаться с нами:</b>\nОлег\n+998 90 123 45 67\n@pravdainedvijimost"
+    cleaned_text = clean_text(message.caption or message.text or "")
+    caption = f"{header}\n{cleaned_text}{footer}"
 
-    text = clean_text(message.text or message.caption or "")
-    content = f"{header}\n{text}{footer}"
-
-    # Отправка в канал
     try:
-        if message.photo:
-            await bot.send_photo(CHANNEL_ID, photo=message.photo[-1].file_id, caption=content)
-        elif message.video:
-            await bot.send_video(CHANNEL_ID, video=message.video.file_id, caption=content)
-        elif message.text:
-            await bot.send_message(CHANNEL_ID, content)
+        if message.media_group_id:
+            media_groups[message.media_group_id].append((message, caption))
+            await asyncio.sleep(1.5)  # Ожидание других сообщений из группы
+            group = media_groups.pop(message.media_group_id, [])
+            if not group:
+                return
+            media = []
+            for i, (msg, _) in enumerate(group):
+                if msg.photo:
+                    file_id = msg.photo[-1].file_id
+                    if i == 0:
+                        media.append(InputMediaPhoto(media=file_id, caption=caption))
+                    else:
+                        media.append(InputMediaPhoto(media=file_id))
+                elif msg.video:
+                    file_id = msg.video.file_id
+                    if i == 0:
+                        media.append(InputMediaVideo(media=file_id, caption=caption))
+                    else:
+                        media.append(InputMediaVideo(media=file_id))
+            if media:
+                await bot.send_media_group(CHANNEL_ID, media)
+                write_counter(object_number + 1)
         else:
-            await bot.send_message(CHANNEL_ID, f"{header}\n<Unsupported content>{footer}")
-
-        write_counter(object_number + 1)
+            if message.photo:
+                await bot.send_photo(CHANNEL_ID, photo=message.photo[-1].file_id, caption=caption)
+            elif message.video:
+                await bot.send_video(CHANNEL_ID, video=message.video.file_id, caption=caption)
+            elif message.text:
+                await bot.send_message(CHANNEL_ID, f"{header}\n{cleaned_text}{footer}")
+            else:
+                await bot.send_message(CHANNEL_ID, f"{header}\n<Unsupported content>{footer}")
+            write_counter(object_number + 1)
     except Exception as e:
         logging.error(f"Ошибка при отправке: {e}")
 
 # Основной запуск
 if __name__ == "__main__":
-    import asyncio
-
     async def main():
         try:
             await dp.start_polling(bot)
         except Exception as e:
             logging.error(f"Ошибка при запуске бота: {e}")
 
-    # Обход ошибки asyncio.run() в средах с активным event loop
     if sys.platform == "win32" and platform.python_version().startswith("3.8"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
