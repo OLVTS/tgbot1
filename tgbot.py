@@ -488,20 +488,6 @@ async def act_set_days(update: Update, context: CallbackContext) -> int:
 # MAIN
 ################################################################################
 
-async def debug_fs(update: Update, context: CallbackContext) -> None:
-    uid = update.effective_user.id
-    if uid not in ADMIN_IDS:
-        return
-    cwd = os.getcwd()
-    files = os.listdir(cwd)
-    exists = DB_FILE.name in files
-    await update.message.reply_text(
-        f"📂 Путь: `{cwd}`\n"
-        f"📋 Файлы: {files}\n"
-        f"✅ users.db найден: {exists}",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     init_db()
@@ -542,7 +528,6 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel_conv)],
     )
     app.add_handler(act_conv)
-    app.add_handler(CommandHandler("debugfs", debug_fs))
     # Run
     app.run_polling()
 
