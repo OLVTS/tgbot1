@@ -48,12 +48,16 @@ URL_REGEX = r"https?://\S+"
 HASHTAG_REGEX = r"#[\wа-яА-ЯёЁ0-9]+"
 
 def clean_text(text):
-    text = re.sub(PHONE_REGEX, "", text)
-    text = re.sub(TG_USERNAME_REGEX, "", text)
-    text = re.sub(URL_REGEX, "", text)
-    text = re.sub(HASHTAG_REGEX, "", text)
-    text = re.sub(r"\n{2,}", "\n", text)
-    return text.strip()
+    lines = text.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        if re.search(PHONE_REGEX, line):
+            continue  # удаляем всю строку, содержащую номер
+        cleaned_line = re.sub(TG_USERNAME_REGEX, "", line)
+        cleaned_line = re.sub(URL_REGEX, "", cleaned_line)
+        cleaned_line = re.sub(HASHTAG_REGEX, "", cleaned_line)
+        cleaned_lines.append(cleaned_line.strip())
+    return "\n".join(cleaned_lines).strip()
 
 # Создание бота и диспетчера
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
