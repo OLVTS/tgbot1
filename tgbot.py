@@ -72,7 +72,7 @@ media_groups = defaultdict(list)
 async def handle_message(message: types.Message):
     object_number = read_counter()
     header = f"#Объект {object_number}"
-    footer = "\n\n<b>По всем вопросам:</b>\n@Etagi_Oleg\n@Nargiz_Etagi\n@Etagi_Akida\nhttps://t.me/pravdainedvijimost"
+    footer = "\n\n<b>По всем вопросам:</b>\n@Khakimov_etagi\nhttps://t.me/+ucdUHFw8S141NzVi"
     cleaned_text = clean_text(message.caption or message.text or "")
     caption = f"{header}\n{cleaned_text}{footer}"
 
