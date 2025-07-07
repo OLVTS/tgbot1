@@ -25,8 +25,8 @@ if not hasattr(ssl, 'SSLContext'):
 logging.basicConfig(level=logging.INFO)
 
 # Токен и ID канала
-BOT_TOKEN = "7947507030:AAEDGga_FOGjiumUvYSq-iDy1UUACUHYOj4"
-CHANNEL_ID = "@pravdainedvijimost"
+BOT_TOKEN = "7708516529:AAGtx9EE2nI9lvs9iHFioUnwP8NWZlnw-xs"
+CHANNEL_ID = "@KhakimovHub"
 
 # Путь к файлу счётчика объектов
 COUNTER_FILE = "object_counter.txt"
