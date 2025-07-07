@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Токен и ID канала
 BOT_TOKEN = "7708516529:AAGtx9EE2nI9lvs9iHFioUnwP8NWZlnw-xs"
-CHANNEL_ID = "@KhakimovHub"
+CHANNEL_ID = "@Deletenomberbot"
 
 # Путь к файлу счётчика объектов
 COUNTER_FILE = "object_counter.txt"
